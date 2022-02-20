@@ -38,6 +38,7 @@ def HomographyModel():
     model = Sequential()
     model.add(InputLayer(input_shape))
 
+    # relu layer after batch normalization
     # two conv2d layers and maxpooling2d layer on 128x128 size
     model.add(Conv2D(64,(3,3),strides=(1,1),padding='same',activation='relu'))
     model.add(BatchNormalization())

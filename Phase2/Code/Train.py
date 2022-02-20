@@ -167,14 +167,14 @@ def TrainOperation():
     train_generator = generator(32)
     print(model.summary())
     loss = tf.keras.losses.MeanSquaredError()
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
     #learning rate 0.001
     # SGD, momentum=0.09
     # nesterov = True
     model.compile(loss=loss,optimizer=optimizer,metrics=['mean_absolute_error'])
     steps_per_epoch = ceil(5000/32)
     model.fit_generator(train_generator,steps_per_epoch=steps_per_epoch,epochs=200,verbose=1)
-    model.save('supervised_learning.h5')
+    model.save('supervised_learning_sgd_lr0.001.h5')
 
 
 
