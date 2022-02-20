@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python3
 
 """
 CMSC733 Spring 2019: Classical and Deep Learning Approaches for
@@ -22,7 +22,7 @@ import cv2
 import sys
 import os
 import glob
-import Misc.ImageUtils as iu
+# import Misc.ImageUtils as iu
 import random
 from skimage import data, exposure, img_as_float
 import matplotlib.pyplot as plt
@@ -33,17 +33,58 @@ import numpy as np
 import time
 import argparse
 import shutil
-from StringIO import StringIO
+# from StringIO import StringIO
 import string
 from termcolor import colored, cprint
 import math as m
 from tqdm import tqdm
 from Misc.TFSpatialTransformer import *
+from sklearn.utils import shuffle
+from math import ceil
 
 # Don't generate pyc codes
 sys.dont_write_bytecode = True
+config = tf.compat.v1.ConfigProto(gpu_options=tf.compat.v1.GPUOptions(allow_growth=True))
+sess = tf.compat.v1.Session(config=config)
+def generator(batch_size):
+    patchA_path = r"./../Data/PatchA"
+    patchB_path = r"./../Data/PatchB"
+    H4_path = r"./../Data/H4"
+    patchA_imgs = []
+    n_patches = 5000 # number of image patches(A and B) available
+    H4_list = np.load(H4_path + "/H4.npy",allow_pickle=True)
+    # print("list length:",len(H4_list))
+    # Infinite loop which ends when epochs specified is completed
+    while True:
+        # shuffle(filepaths)
+        # Creating batches
+        for i in range(0, n_patches-batch_size-1, batch_size):
+            patches=[]
+            labels = []
+            for batch_sample in range(batch_size):
+                patchA_name = patchA_path + os.sep + str(i + batch_sample) + ".jpg"
+                patchA = cv2.imread(patchA_name,0)
 
-    
+                patchB_name = patchB_path + os.sep + str(i + batch_sample) + ".jpg"
+                patchB = cv2.imread(patchB_name,0)
+
+                patchstack = np.dstack((patchA,patchB))
+                patches.append(patchstack)
+                # print(i+batch_sample)
+                # print(type(H4_list[i+batch_sample]))
+                X = H4_list[i+batch_sample][:,0]
+                Y = H4_list[i+batch_sample][:,1]
+                H4_flat = np.hstack((X,Y))
+                labels.append(H4_flat)
+                # print(H4_flat)
+                # print(H4_list[i+batch_sample])
+                # exit()
+            patches = np.array(patches)
+            labels = np.array(labels)
+
+            yield patches,labels
+
+
 def GenerateBatch(BasePath, DirNamesTrain, TrainLabels, ImageSize, MiniBatchSize):
     """
     Inputs: 
@@ -94,10 +135,12 @@ def PrettyPrint(NumEpochs, DivTrain, MiniBatchSize, NumTrainSamples, LatestFile)
     if LatestFile is not None:
         print('Loading latest checkpoint with the name ' + LatestFile)              
 
-    
-def TrainOperation(ImgPH, LabelPH, DirNamesTrain, TrainLabels, NumTrainSamples, ImageSize,
-                   NumEpochs, MiniBatchSize, SaveCheckPoint, CheckPointPath,
-                   DivTrain, LatestFile, BasePath, LogsPath, ModelType):
+
+
+# def TrainOperation(ImgPH, LabelPH, DirNamesTrain, TrainLabels, NumTrainSamples, ImageSize,
+#                    NumEpochs, MiniBatchSize, SaveCheckPoint, CheckPointPath,
+#                    DivTrain, LatestFile, BasePath, LogsPath, ModelType):
+def TrainOperation():
     """
     Inputs: 
     ImgPH is the Input Image placeholder
@@ -119,67 +162,82 @@ def TrainOperation(ImgPH, LabelPH, DirNamesTrain, TrainLabels, NumTrainSamples, 
     Saves Trained network in CheckPointPath and Logs to LogsPath
     """      
     # Predict output with forward pass
-    prLogits, prSoftMax = HomographyModel(ImgPH, ImageSize, MiniBatchSize)
+    # prLogits, prSoftMax = HomographyModel(ImgPH, ImageSize, MiniBatchSize)
+    model = HomographyModel()
+    train_generator = generator(32)
+    print(model.summary())
+    loss = tf.keras.losses.MeanSquaredError()
+    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
+    #learning rate 0.001
+    # SGD, momentum=0.09
+    # nesterov = True
+    model.compile(loss=loss,optimizer=optimizer,metrics=['mean_absolute_error'])
+    steps_per_epoch = ceil(5000/32)
+    model.fit_generator(train_generator,steps_per_epoch=steps_per_epoch,epochs=200,verbose=1)
+    model.save('supervised_learning.h5')
 
-    with tf.name_scope('Loss'):
-        ###############################################
-        # Fill your loss function of choice here!
-        ###############################################
-        loss = ...
 
-    with tf.name_scope('Adam'):
-    	###############################################
-    	# Fill your optimizer of choice here!
-    	###############################################
-        Optimizer = ...
 
-    # Tensorboard
-    # Create a summary to monitor loss tensor
-    tf.summary.scalar('LossEveryIter', loss)
-    # tf.summary.image('Anything you want', AnyImg)
-    # Merge all summaries into a single operation
-    MergedSummaryOP = tf.summary.merge_all()
 
-    # Setup Saver
-    Saver = tf.train.Saver()
+
+    # with tf.name_scope('Loss'):
+    #     ###############################################
+    #     # Fill your loss function of choice here!
+    #     ###############################################
+    #     loss = tf.reduce_mean()
+    # with tf.name_scope('Adam'):
+    # 	###############################################
+    # 	# Fill your optimizer of choice here!
+    # 	###############################################
+    #     Optimizer = ...
+
+    # # Tensorboard
+    # # Create a summary to monitor loss tensor
+    # tf.summary.scalar('LossEveryIter', loss)
+    # # tf.summary.image('Anything you want', AnyImg)
+    # # Merge all summaries into a single operation
+    # MergedSummaryOP = tf.summary.merge_all()
+
+    # # Setup Saver
+    # Saver = tf.train.Saver()
     
-    with tf.Session() as sess:       
-        if LatestFile is not None:
-            Saver.restore(sess, CheckPointPath + LatestFile + '.ckpt')
-            # Extract only numbers from the name
-            StartEpoch = int(''.join(c for c in LatestFile.split('a')[0] if c.isdigit()))
-            print('Loaded latest checkpoint with the name ' + LatestFile + '....')
-        else:
-            sess.run(tf.global_variables_initializer())
-            StartEpoch = 0
-            print('New model initialized....')
+    # with tf.Session() as sess:       
+    #     if LatestFile is not None:
+    #         Saver.restore(sess, CheckPointPath + LatestFile + '.ckpt')
+    #         # Extract only numbers from the name
+    #         StartEpoch = int(''.join(c for c in LatestFile.split('a')[0] if c.isdigit()))
+    #         print('Loaded latest checkpoint with the name ' + LatestFile + '....')
+    #     else:
+    #         sess.run(tf.global_variables_initializer())
+    #         StartEpoch = 0
+    #         print('New model initialized....')
 
-        # Tensorboard
-        Writer = tf.summary.FileWriter(LogsPath, graph=tf.get_default_graph())
+    #     # Tensorboard
+    #     Writer = tf.summary.FileWriter(LogsPath, graph=tf.get_default_graph())
             
-        for Epochs in tqdm(range(StartEpoch, NumEpochs)):
-            NumIterationsPerEpoch = int(NumTrainSamples/MiniBatchSize/DivTrain)
-            for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
-                I1Batch, LabelBatch = GenerateBatch(BasePath, DirNamesTrain, TrainLabels, ImageSize, MiniBatchSize)
-                FeedDict = {ImgPH: I1Batch, LabelPH: LabelBatch}
-                _, LossThisBatch, Summary = sess.run([Optimizer, loss, MergedSummaryOP], feed_dict=FeedDict)
+    #     for Epochs in tqdm(range(StartEpoch, NumEpochs)):
+    #         NumIterationsPerEpoch = int(NumTrainSamples/MiniBatchSize/DivTrain)
+    #         for PerEpochCounter in tqdm(range(NumIterationsPerEpoch)):
+    #             I1Batch, LabelBatch = GenerateBatch(BasePath, DirNamesTrain, TrainLabels, ImageSize, MiniBatchSize)
+    #             FeedDict = {ImgPH: I1Batch, LabelPH: LabelBatch}
+    #             _, LossThisBatch, Summary = sess.run([Optimizer, loss, MergedSummaryOP], feed_dict=FeedDict)
                 
-                # Save checkpoint every some SaveCheckPoint's iterations
-                if PerEpochCounter % SaveCheckPoint == 0:
-                    # Save the Model learnt in this epoch
-                    SaveName =  CheckPointPath + str(Epochs) + 'a' + str(PerEpochCounter) + 'model.ckpt'
-                    Saver.save(sess,  save_path=SaveName)
-                    print('\n' + SaveName + ' Model Saved...')
+    #             # Save checkpoint every some SaveCheckPoint's iterations
+    #             if PerEpochCounter % SaveCheckPoint == 0:
+    #                 # Save the Model learnt in this epoch
+    #                 SaveName =  CheckPointPath + str(Epochs) + 'a' + str(PerEpochCounter) + 'model.ckpt'
+    #                 Saver.save(sess,  save_path=SaveName)
+    #                 print('\n' + SaveName + ' Model Saved...')
 
-                # Tensorboard
-                Writer.add_summary(Summary, Epochs*NumIterationsPerEpoch + PerEpochCounter)
-                # If you don't flush the tensorboard doesn't update until a lot of iterations!
-                Writer.flush()
+    #             # Tensorboard
+    #             Writer.add_summary(Summary, Epochs*NumIterationsPerEpoch + PerEpochCounter)
+    #             # If you don't flush the tensorboard doesn't update until a lot of iterations!
+    #             Writer.flush()
 
-            # Save model every epoch
-            SaveName = CheckPointPath + str(Epochs) + 'model.ckpt'
-            Saver.save(sess, save_path=SaveName)
-            print('\n' + SaveName + ' Model Saved...')
+    #         # Save model every epoch
+    #         SaveName = CheckPointPath + str(Epochs) + 'model.ckpt'
+    #         Saver.save(sess, save_path=SaveName)
+    #         print('\n' + SaveName + ' Model Saved...')
             
 
 def main():
@@ -193,7 +251,7 @@ def main():
     Parser = argparse.ArgumentParser()
     Parser.add_argument('--BasePath', default='/media/nitin/Research/Homing/SpectralCompression/COCO', help='Base path of images, Default:/media/nitin/Research/Homing/SpectralCompression/COCO')
     Parser.add_argument('--CheckPointPath', default='../Checkpoints/', help='Path to save Checkpoints, Default: ../Checkpoints/')
-	Parser.add_argument('--ModelType', default='Unsup', help='Model type, Supervised or Unsupervised? Choose from Sup and Unsup, Default:Unsup')
+    Parser.add_argument('--ModelType', default='Unsup', help='Model type, Supervised or Unsupervised? Choose from Sup and Unsup, Default:Unsup')
     Parser.add_argument('--NumEpochs', type=int, default=50, help='Number of Epochs to Train for, Default:50')
     Parser.add_argument('--DivTrain', type=int, default=1, help='Factor to reduce Train data by per epoch, Default:1')
     Parser.add_argument('--MiniBatchSize', type=int, default=1, help='Size of the MiniBatch to use, Default:1')
@@ -208,10 +266,10 @@ def main():
     LoadCheckPoint = Args.LoadCheckPoint
     CheckPointPath = Args.CheckPointPath
     LogsPath = Args.LogsPath
-	ModelType = Args.ModelType
+    ModelType = Args.ModelType
 
     # Setup all needed parameters including file reading
-    DirNamesTrain, SaveCheckPoint, ImageSize, NumTrainSamples, TrainLabels, NumClasses = SetupAll(BasePath, CheckPointPath)
+    # DirNamesTrain, SaveCheckPoint, ImageSize, NumTrainSamples, TrainLabels, NumClasses = SetupAll(BasePath, CheckPointPath)
 
 
 
@@ -220,19 +278,20 @@ def main():
         LatestFile = FindLatestModel(CheckPointPath)
     else:
         LatestFile = None
-    
+
     # Pretty print stats
-    PrettyPrint(NumEpochs, DivTrain, MiniBatchSize, NumTrainSamples, LatestFile)
+    # PrettyPrint(NumEpochs, DivTrain, MiniBatchSize, NumTrainSamples, LatestFile)
 
     # Define PlaceHolder variables for Input and Predicted output
-    ImgPH = tf.placeholder(tf.float32, shape=(MiniBatchSize, ImageSize[0], ImageSize[1], ImageSize[2]))
-    LabelPH = tf.placeholder(tf.float32, shape=(MiniBatchSize, NumClasses)) # OneHOT labels
-    
-    TrainOperation(ImgPH, LabelPH, DirNamesTrain, TrainLabels, NumTrainSamples, ImageSize,
-                   NumEpochs, MiniBatchSize, SaveCheckPoint, CheckPointPath,
-                   DivTrain, LatestFile, BasePath, LogsPath, ModelType)
+    # ImgPH = tf.placeholder(tf.float32, shape=(MiniBatchSize, ImageSize[0], ImageSize[1], ImageSize[2]))
+    # LabelPH = tf.placeholder(tf.float32, shape=(MiniBatchSize, NumClasses)) # OneHOT labels
+
+    # TrainOperation(ImgPH, LabelPH, DirNamesTrain, TrainLabels, NumTrainSamples, ImageSize,
+    #                 NumEpochs, MiniBatchSize, SaveCheckPoint, CheckPointPath,
+    #                 DivTrain, LatestFile, BasePath, LogsPath, ModelType)
+    TrainOperation()
         
     
 if __name__ == '__main__':
     main()
- 
+    # generator(32) 
