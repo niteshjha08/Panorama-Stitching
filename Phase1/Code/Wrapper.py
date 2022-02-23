@@ -16,6 +16,7 @@ University of Maryland, College Park
 """
 
 # Code starts here:
+from sys import flags
 import numpy as np
 import cv2
 import argparse
@@ -33,6 +34,8 @@ class Img:
 		self.fdi = []
 		self.kp = []
 		self.temp_kp = []
+		self.side_offset = 0 ## positive for offset to right, negative for left
+		self.vertical_offset = 0 ## positive for top, negative for bottom
 
 def read_imgs(path):
 	img_files = os.listdir(path)
@@ -59,8 +62,6 @@ def get_anms(img_arr, num_features):
 	return img_arr
 
 def get_feature_descriptors(img_arr, out_path, patch_size=41, save_fig=False):
-	fd_arr = []
-	fd_indexes = []
 	offset = patch_size//2
 	count = 0
 	for i in range(len(img_arr)):
@@ -154,16 +155,17 @@ def performRANSAC(feature_pairs, fp_indexes, good, inlier_tolerance, num_iter, s
 	inlier_fp = []
 	inlier_idx = []
 	good_new = []
-	for i in range(num_iter):
+	i = 0
+	while (len(inlier_fp)<int(len(feature_pairs)*0.9)):
 		## choose 4 random pairs
 		pairs = np.random.randint(0,len(fp_indexes),size=4)
-		source_features = np.float32([[[fp_indexes[p][0],fp_indexes[p][1]]] for p in pairs])
-		destination_features = np.float32([[[fp_indexes[p][2],fp_indexes[p][3]]] for p in pairs])
-		H, _ = cv2.findHomography(source_features, destination_features, method=0, ransacReprojThreshold=0.0)
+		destination_features = np.float32([[[fp_indexes[p][0],fp_indexes[p][1]]] for p in pairs])
+		source_features = np.float32([[[fp_indexes[p][2],fp_indexes[p][3]]] for p in pairs])
+		h_estimate, _ = cv2.findHomography(source_features, destination_features, method=0, ransacReprojThreshold=0.0)
 		try:
 			for p in pairs:
-				Hpi = np.dot(H,np.array([[fp_indexes[p][0]],[fp_indexes[p][1]],[1]]))
-				ppi = np.array([[fp_indexes[p][2]],[fp_indexes[p][3]],[1]])
+				Hpi = np.dot(h_estimate,np.array([[fp_indexes[p][2]],[fp_indexes[p][1]],[3]]))
+				ppi = np.array([[fp_indexes[p][0]],[fp_indexes[p][1]],[1]])
 				ssd = np.sqrt(np.sum(np.square(ppi-Hpi)))
 				if ssd < inlier_tolerance:
 					if fp_indexes[p] not in inlier_idx:
@@ -173,17 +175,62 @@ def performRANSAC(feature_pairs, fp_indexes, good, inlier_tolerance, num_iter, s
 						good_new.append(good[p])
 		except TypeError:
 			pass
+		i += 1
+	destination_features = np.float32([inlier_idx[i] for i in range(0,len(inlier_idx),2)])
+	source_features = np.float32([inlier_idx[i]for i in range(1,len(inlier_idx),2)])
+	homography, _ = cv2.findHomography(source_features, destination_features, method=0, ransacReprojThreshold=0.0)
+	return inlier_fp, np.asarray(inlier_idx), good_new, homography
 
-	source_features = np.float32([inlier_idx[i] for i in range(0,len(inlier_idx),2)])
-	destination_features = np.float32([inlier_idx[i]for i in range(1,len(inlier_idx),2)])
+def stitcher(img1, img2, homography, matched_points):
+	warped_img = cv2.warpPerspective(src = img2.rgb, dst=None, M=np.linalg.inv(homography), dsize=(img2.rgb.shape[1], img2.rgb.shape[0]))
 
-	H, _ = cv2.findHomography(source_features, destination_features, method=0, ransacReprojThreshold=0.0)
-	return inlier_fp, np.asarray(inlier_idx), good_new, H
+	# cv2.imshow("warped", warped_img)
+	# # cv2.imshow("im1", img1.rgb)
+	# if cv2.waitKey(0) == ord('q'):
+	# 	cv2.destroyAllWindows()
+	check_distance = np.sum(np.sum(matched_points[::2]-matched_points[1::2], axis=1), axis=0)
+	ofs = np.average(matched_points[::2]-matched_points[1::2], axis=0)
+	print(ofs)
+	if check_distance[0] < check_distance[1]:
+		stitched_img, offsets = stitch_vertical(img1, warped_img, int(ofs[0][0]))
+		# cv2.imshow("stitched_img", stitched_img)
+		# if cv2.waitKey(0) == ord('q'):
+		# 	cv2.destroyAllWindows()
+	else:
+		stitched_img, offsets = stitch_horizontal(img1, warped_img, int(ofs[0][1]))
+		
+	return stitched_img
+def stitch_horizontal(img1, img2, offset):
+	height = img1.rgb.shape[0]
+	width = img1.rgb.shape[1] + img2.shape[1]
+	new_img = np.zeros((height, width, 3), np.uint8)
+	new_img[:height][:img1.rgb.shape[1]][:] = img1.rgb
+	new_img[:height][img1.rgb.shape[1]:][:] = img2
+	zeros = np.zeros((1,width,3), np.uint8)
+	# for i in range(len(new_img)):
+	# 	if new_img[i][:][:].all() == zeros[0][:][:].all():
+	# 		print(i)
+	return 0,0
+
+def stitch_vertical(img1, img2, offset):
+	height = img1.rgb.shape[0] + img2.shape[0]
+	width = img1.rgb.shape[1] + offset
+	new_img = np.zeros((height, width, 3), np.uint8)
+	new_img[:img1.rgb.shape[0],:width-offset,:] = img1.rgb[:,:,:]
+	new_img[img1.rgb.shape[0]:,offset:width,:] = img2
+	
+	zeros = np.zeros((1,width,3), np.uint8)
+	for i in range(500):# len(new_img)):
+		if new_img[i][:][:].all() == zeros[0][:][:].all():
+			print(new_img[i][:][:].all() == zeros[0][:][:].all())
+			print(i)
+	print(np.shape(new_img))
+	return new_img,0
 
 def main():
 	# Add any Command Line arguments here
 	Parser = argparse.ArgumentParser()
-	Parser.add_argument('--NumFeatures','-n', default=100, type=int, help='Number of best features to extract from each image, Default:100')
+	Parser.add_argument('--NumFeatures','-n', default=300, type=int, help='Number of best features to extract from each image, Default:100')
 	Parser.add_argument('--path', '-p', type=str, help='Path where input data is', default="../Data/Train/Set1")
 	Parser.add_argument('--save_fig', '-s', type=bool, help='True if you want to save outputs', default=False)
 	Args = Parser.parse_args()
@@ -253,34 +300,22 @@ def main():
 	"""
 	Refine: RANSAC, Estimate Homography
 	"""
-	ransac_fp, ransac_idx, good_new, H = performRANSAC(matching_f12, matching_i12, good, 100, len(matching_f12), save_fig=Args.save_fig)
+	ransac_fp, ransac_idx, good_new, homography = performRANSAC(matching_f12, matching_i12, good, 20, num_iter=40, save_fig=Args.save_fig)
 	print('RANSAC output shapes:',np.shape(ransac_fp),np.shape(ransac_idx))
+
 	## plot the result
 	matched_image = cv2.drawMatchesKnn(img_arr[0].rgb, img_arr[0].kp, img_arr[1].rgb, img_arr[1].kp, good_new, None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
 	if Args.save_fig:
 		cv2.imwrite(f'{out_path}/ransac.jpg', matched_image)
-	check_distance = np.sum(np.sum(ransac_idx[::2]-ransac_idx[1::2], axis=1), axis=0)
+	
 	
 	"""
 	Image Warping + Blending
 	Save Panorama output as mypano.png
 	"""
-	if check_distance[0] < check_distance[1]:
-		height = img_arr[0].rgb.shape[0] + img_arr[1].rgb.shape[0]
-		wdith = img_arr[1].rgb.shape[1]
-	else:
-		height = img_arr[0].rgb.shape[0]
-		wdith = img_arr[1].rgb.shape[1] + img_arr[1].rgb.shape[1]
-	result = cv2.warpPerspective(img_arr[1].rgb, H, (img_arr[1].rgb.shape[1], img_arr[1].rgb.shape[0]))
-	# width = img_arr[0].rgb.shape[1]
-	# height = img_arr[0].rgb.shape[0] + result.shape[0]
-	template = np.zeros((height,width,3), np.uint8)
-	template[0:img_arr[0].rgb.shape[0],:] = img_arr[0].rgb
-	template[img_arr[0].rgb.shape[0]:,:] = result
-	# cv2.imshow('stitched', template)
-	# cv2.imshow('img1', img_arr[0].rgb)
-	# if cv2.waitKey(0) == ord('q'):
-	# 	cv2.destroyAllWindows
+	stitched_img = stitcher(img_arr[0], img_arr[1], homography, ransac_idx)
+	if Args.save_fig:
+		cv2.imwrite(f'{out_path}/stitched12.jpg', stitched_img)
 if __name__ == '__main__':
 	main()
 
