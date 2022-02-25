@@ -326,7 +326,7 @@ def UnsupervisedModel(patches_batch,batch_size,Ca,patches_b, img_a):
 
     Ca = tf.reshape(Ca,[batch_size,8]) # flattening (4,2) shape
 
-    H_matrix = TensorDLT(batch_size=batch_size, Ca=Ca,H_4pt=H_4pt)
+    H_matrix = TensorDLT(batch_size=batch_size, Ca=Ca,H_4pt=H_4pt) # 3x3 
 
     # Spatial transform
     H = 128.0
@@ -355,6 +355,8 @@ def UnsupervisedModel(patches_batch,batch_size,Ca,patches_b, img_a):
 
     # warped_Ia_gray =tf.reduce_mean(warped_Ia,)
     pred_Ib = tf.reshape (warped_Ia_gray,[batch_size,128,128,1])
+    # print("prediction B:\n",pred_Ib[0])
+    # print("patches B:\n",patches_b[0])
 
     return pred_Ib, patches_b
 

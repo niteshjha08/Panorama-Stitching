@@ -17,6 +17,7 @@ University of Maryland, College Park
 # skimage, do (apt install python-skimage)
 # termcolor, do (pip install termcolor)
 
+from re import L
 from unittest.mock import patch
 # import tensorflow as tf
 import tensorflow.compat.v1 as tf
@@ -152,6 +153,9 @@ def unsupervised_batch_generator(ImagesPath,batch_size,image_names):
     patch_b_batch = np.array(patch_b_batch)
     Ca_batch = np.array(Ca_batch)
 
+    patches = patches/255.0
+    patch_b_batch = patch_b_batch/255.0
+    img_1 = img_1/255.0
     return patches,Ca_batch,patch_b_batch,img_1
 
 
@@ -367,23 +371,31 @@ def UnsupervisedTrainOperation(batch_size,total_epochs,n_samples,ImagesPath,imag
     pred_patchB_,true_patchB_ = UnsupervisedModel(patches_batch_,batch_size,Ca_batch_,patch_b_batch_, img_a_)
     Saver = tf.train.Saver()
     with tf.name_scope('Loss'):
+        print("pred: ",pred_patchB_)
+        print("true: ",true_patchB_)
+
         loss = tf.reduce_mean(tf.abs(pred_patchB_ - true_patchB_))
 
     with tf.name_scope('Adam'):
-        Optimizer = tf.train.AdamOptimizer(learning_rate=1e-5).minimize(loss)
+        Optimizer = tf.train.AdamOptimizer(learning_rate=1e-7).minimize(loss)
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         steps_per_epoch = ceil(n_samples/batch_size)
+        loss_history=[]
         for epoch in range(total_epochs):
+            print("epoch: ",epoch)
             for batch in range(steps_per_epoch):
+                print("batch: ",batch)
                 patches_batch, Ca_batch,patch_b_batch,img_a = unsupervised_batch_generator(ImagesPath,batch_size,image_names)
                 
-                sess.run([Optimizer, loss], feed_dict={patches_batch_:patches_batch,Ca_batch_:Ca_batch,\
+                LossThisBatch = sess.run([loss], feed_dict={patches_batch_:patches_batch,Ca_batch_:Ca_batch,\
                                                                         patch_b_batch_:patch_b_batch,img_a_:img_a})
-
-
-    Saver.save(sess,save_path="./Unsupervised_model_Savepath")
+                print("loss: ",LossThisBatch)
+                loss_history.append(LossThisBatch)
+    # Saver.save(sess,save_path="./Unsupervised_model_Savepath")
+    print("Works!")
+    print(loss_history)
 
 
 def main():
@@ -446,7 +458,7 @@ def main():
     for dir,subdir,files in os.walk(ImagesPath):
         for file in files:
             image_names.append(file)
-    UnsupervisedTrainOperation(batch_size=10,total_epochs=3,n_samples=30,ImagesPath=ImagesPath,image_names=image_names)
+    UnsupervisedTrainOperation(batch_size=64,total_epochs=50,n_samples=5000,ImagesPath=ImagesPath,image_names=image_names)
     # -----------------------------------------------------------------------------------------------    
     
 if __name__ == '__main__':
