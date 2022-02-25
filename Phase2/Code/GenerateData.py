@@ -9,11 +9,12 @@ import os
 def GeneratePatches(ImagesPath,image_names, patch_size=128,rho=32):
 
     idx=random.randint(0,len(image_names)-1)
-    print(idx)
+    # print(idx)
     path=ImagesPath + os.sep + image_names[idx]
-    img=cv2.imread(path)  
+    img=cv2.imread(path,0)  
+    img=cv2.resize(img,(320,240))
     
-    M,N,_=img.shape
+    M,N=img.shape
 
     if((M<patch_size+2*rho+1) | (N<patch_size+2*rho+1)):
         return False,_,_,_,_,_
@@ -43,19 +44,29 @@ def GeneratePatches(ImagesPath,image_names, patch_size=128,rho=32):
     # Visualize patches and perspective transform:
     # cv2.polylines(img,[Ca],True,(0,0,255),5)
     # cv2.polylines(img,[Cb],True,(0,255,0),5)
+    # cv2.imshow('patch selection',img)
+    # cv2.waitKey(0)
 
     # The following two methods of finding inverse perspective transform are equivalent
     # Method 1
-    H=cv2.getPerspectiveTransform(Cb.astype(np.float32),Ca.astype(np.float32))
+    # H=cv2.getPerspectiveTransform(Cb.astype(np.float32),Ca.astype(np.float32))
     # Method 2
-    # H1=cv2.getPerspectiveTransform(pt1,pt2)
-    # H=np.linalg.inv(PT2)
+    H1=cv2.getPerspectiveTransform(Ca.astype(np.float32),Cb.astype(np.float32))
+    H=np.linalg.inv(H1)
+    # print(img.shape)
 
-    h,w=img.shape[:-1]
+    # print(img.shape[:-1])
+    h,w=img.shape
     warped = cv2.warpPerspective(img,H,(w,h))
 
-    patch_A = img[Ca[0,1]:Ca[3,1],Ca[0,0]:Ca[1,0],:]
-    patch_B = warped[Ca[0,1]:Ca[3,1],Ca[0,0]:Ca[1,0],:]
+    patch_A = img[Ca[0,1]:Ca[3,1],Ca[0,0]:Ca[1,0]]
+    patch_B = warped[Ca[0,1]:Ca[3,1],Ca[0,0]:Ca[1,0]]
+
+
+    # See patches 
+    # cv2.imshow('patchA',patch_A)
+    # cv2.imshow('patchB',patch_B)
+    # cv2.waitKey()
 
     H_4pt=Cb-Ca
     # check
@@ -67,17 +78,17 @@ def GeneratePatches(ImagesPath,image_names, patch_size=128,rho=32):
     # cv2.waitKey(0)
     # ------
     # print(H_4pt.shape)
-    print(patch_B.shape)
+    # print(patch_B.shape)
     if(H_4pt.shape[0]!=4):
         return False,_, _, _,_,_
 
-    return True, patch_A, patch_B, H_4pt,Ca,Cb
+    return True, patch_A, patch_B, H_4pt,Ca,Cb,img
 
 if __name__=="__main__":
     ImagesPath=r"./../Data/Train"
-    PatchAPath=r"./../Data/PatchA"
-    PatchBPath=r"./../Data/PatchB"
-    H4Path=r"./../Data/H4"
+    PatchAPath=r"./../Data/testing/PatchA"
+    PatchBPath=r"./../Data/testing/PatchB"
+    H4Path=r"./../Data/testing/H4"
 
     if not os.path.exists(ImagesPath):
         print("The images path does not exist!")
@@ -96,7 +107,7 @@ if __name__=="__main__":
         for file in files:
             image_names.append(file)
     count=0
-    n_samples=5001
+    n_samples=10
     H_4pt_array=[]
     Ca_array=[]
     Cb_array=[]

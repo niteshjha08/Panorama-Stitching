@@ -17,7 +17,10 @@ University of Maryland, College Park
 # skimage, do (apt install python-skimage)
 # termcolor, do (pip install termcolor)
 
-import tensorflow as tf
+from unittest.mock import patch
+# import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
 import cv2
 import sys
 import os
@@ -27,6 +30,7 @@ import random
 from skimage import data, exposure, img_as_float
 import matplotlib.pyplot as plt
 from Network.Network import HomographyModel
+from Network.UnsupervisedNetwork import UnsupervisedModel
 from Misc.MiscUtils import *
 from Misc.DataUtils import *
 import numpy as np
@@ -41,48 +45,114 @@ from tqdm import tqdm
 from Misc.TFSpatialTransformer import *
 from sklearn.utils import shuffle
 from math import ceil
+from keras import backend as K
+from tensorflow.keras.callbacks import ModelCheckpoint
+from GenerateData import GeneratePatches
+
 
 # Don't generate pyc codes
 sys.dont_write_bytecode = True
 config = tf.compat.v1.ConfigProto(gpu_options=tf.compat.v1.GPUOptions(allow_growth=True))
 sess = tf.compat.v1.Session(config=config)
-def generator(batch_size):
-    patchA_path = r"./../Data/PatchA"
-    patchB_path = r"./../Data/PatchB"
-    H4_path = r"./../Data/H4"
-    patchA_imgs = []
-    n_patches = 5000 # number of image patches(A and B) available
-    H4_list = np.load(H4_path + "/H4.npy",allow_pickle=True)
-    # print("list length:",len(H4_list))
+
+
+# def generator(batch_size):
+#     patchA_path = r"./../Data/PatchA"
+#     patchB_path = r"./../Data/PatchB"
+#     H4_path = r"./../Data/H4"
+#     patchA_imgs = []
+#     n_patches = 5000 # number of image patches(A and B) available
+#     H4_list = np.load(H4_path + "/H4.npy",allow_pickle=True)
+#     # print("list length:",len(H4_list))
+#     # Infinite loop which ends when epochs specified is completed
+#     while True:
+#         # shuffle(filepaths)
+#         # Creating batches
+#         for i in range(0, n_patches-batch_size-1, batch_size):
+#             patches=[]
+#             labels = []
+#             for batch_sample in range(batch_size):
+#                 patchA_name = patchA_path + os.sep + str(i + batch_sample) + ".jpg"
+#                 patchA = cv2.imread(patchA_name,0)
+#                 # patchA=
+#                 patchB_name = patchB_path + os.sep + str(i + batch_sample) + ".jpg"
+#                 patchB = cv2.imread(patchB_name,0)
+
+#                 patchstack = np.dstack((patchA,patchB))
+#                 patches.append(patchstack)
+             
+#                 X = H4_list[i+batch_sample][:,0]
+#                 Y = H4_list[i+batch_sample][:,1]
+#                 H4_flat = np.hstack((X,Y))
+#                 labels.append(H4_flat)
+                
+#                 # print("H4 flat:",H4_flat)
+#                 # print(H4_list[i+batch_sample])
+#                 # exit()
+#             patches = np.array(patches)
+#             labels = np.array(labels)
+
+#             yield patches,labels
+
+def generator(ImagesPath,n_images,batch_size,image_names):
+    
     # Infinite loop which ends when epochs specified is completed
     while True:
         # shuffle(filepaths)
+
         # Creating batches
-        for i in range(0, n_patches-batch_size-1, batch_size):
-            patches=[]
-            labels = []
-            for batch_sample in range(batch_size):
-                patchA_name = patchA_path + os.sep + str(i + batch_sample) + ".jpg"
-                patchA = cv2.imread(patchA_name,0)
-
-                patchB_name = patchB_path + os.sep + str(i + batch_sample) + ".jpg"
-                patchB = cv2.imread(patchB_name,0)
-
-                patchstack = np.dstack((patchA,patchB))
+        patches=[]
+        labels = []
+        count=0
+        while(count<batch_size):
+            retval, patch_A, patch_B, H_4pt, Ca,Cb,_=GeneratePatches(ImagesPath,image_names)
+            if(retval):
+                count+=1
+                patchstack = np.dstack((patch_A,patch_B))
                 patches.append(patchstack)
-                # print(i+batch_sample)
-                # print(type(H4_list[i+batch_sample]))
-                X = H4_list[i+batch_sample][:,0]
-                Y = H4_list[i+batch_sample][:,1]
+                
+                X = H_4pt[:,0]
+                Y = H_4pt[:,1]
+           
                 H4_flat = np.hstack((X,Y))
                 labels.append(H4_flat)
-                # print(H4_flat)
-                # print(H4_list[i+batch_sample])
-                # exit()
-            patches = np.array(patches)
-            labels = np.array(labels)
+                
+        patches = np.array(patches)
+        labels = np.array(labels)
 
-            yield patches,labels
+        yield patches,labels
+
+def unsupervised_batch_generator(ImagesPath,batch_size,image_names):
+    patches=[]
+    labels = []
+    count=0
+    img_1=[]
+    Ca_batch = []
+    patch_b_batch=[]
+    while(count<batch_size):
+        retval, patch_A, patch_B, H_4pt, Ca,Cb,img=GeneratePatches(ImagesPath,image_names)
+        
+        if(retval):
+            count+=1
+            patchstack = np.dstack((patch_A,patch_B))
+            patches.append(patchstack)
+            
+            X = H_4pt[:,0]
+            Y = H_4pt[:,1]
+        
+            H4_flat = np.hstack((X,Y))
+            labels.append(H4_flat)
+            img_1.append(img)
+            Ca_batch.append(Ca)
+            patch_b_batch.append(patch_B)
+            
+    patches = np.array(patches)
+    labels = np.array(labels)
+    img_1 = np.array(img_1)
+    patch_b_batch = np.array(patch_b_batch)
+    Ca_batch = np.array(Ca_batch)
+
+    return patches,Ca_batch,patch_b_batch,img_1
 
 
 def GenerateBatch(BasePath, DirNamesTrain, TrainLabels, ImageSize, MiniBatchSize):
@@ -139,8 +209,23 @@ def PrettyPrint(NumEpochs, DivTrain, MiniBatchSize, NumTrainSamples, LatestFile)
 
 # def TrainOperation(ImgPH, LabelPH, DirNamesTrain, TrainLabels, NumTrainSamples, ImageSize,
 #                    NumEpochs, MiniBatchSize, SaveCheckPoint, CheckPointPath,
+# 
 #                    DivTrain, LatestFile, BasePath, LogsPath, ModelType):
-def TrainOperation():
+
+def L2_loss(y_true, y_pred):
+    # tf.cast(y_pred|y_true, tf.float32|tf.int64)
+    # tf.cast(y_true, tf.int64)
+    
+    # y_pred=tf.cast(y_pred, tf.int64)
+    y_true=tf.cast(y_true, tf.float32)
+
+    # print("type:",y_pred.dtype)
+    # print("type:",y_true.dtype)
+
+    return K.sqrt(K.sum(K.square(y_pred - y_true), axis=-1, keepdims=True))
+
+
+def TrainOperation(CheckPointPath,LogsPath):
     """
     Inputs: 
     ImgPH is the Input Image placeholder
@@ -161,20 +246,53 @@ def TrainOperation():
     Outputs:
     Saves Trained network in CheckPointPath and Logs to LogsPath
     """      
+    # Creating folders for checkpoint and logs, if they don't exist
+    if not (os.path.isdir(CheckPointPath)):
+        os.makedirs(CheckPointPath)
+
+    if not (os.path.isdir(LogsPath)):
+        os.makedirs(LogsPath)
+
+    # training image path
+    ImagesPath=r"./../Data/Train"
+    image_names=[]
+    for dir,subdir,files in os.walk(ImagesPath):
+        for file in files:
+            image_names.append(file)
+
+    ckpt_filename = CheckPointPath + "weights - {epoch:02d}.ckpt"
+    ckpt = ModelCheckpoint(ckpt_filename,monitor='loss',mode=min,save_best_only=True,save_weights_only=True,verbose=1,save_freq=15650)
+
     # Predict output with forward pass
     # prLogits, prSoftMax = HomographyModel(ImgPH, ImageSize, MiniBatchSize)
     model = HomographyModel()
-    train_generator = generator(32)
+
+    BATCH_SIZE = 64
+    EPOCHS = 200
+    N_IMAGES=20000
+    # ImagesPath,n_images,batch_size,image_names
+    train_generator = generator(ImagesPath,N_IMAGES,BATCH_SIZE,image_names)
     print(model.summary())
-    loss = tf.keras.losses.MeanSquaredError()
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    # loss = tf.keras.losses.MeanSquaredError()
+    
+    optimizer = tf.keras.optimizers.SGD(learning_rate=0.0001,momentum=0.9)
     #learning rate 0.001
     # SGD, momentum=0.09
     # nesterov = True
-    model.compile(loss=loss,optimizer=optimizer,metrics=['mean_absolute_error'])
-    steps_per_epoch = ceil(5000/32)
-    model.fit_generator(train_generator,steps_per_epoch=steps_per_epoch,epochs=200,verbose=1)
-    model.save('supervised_learning_sgd_lr0.001.h5')
+    # -------------------------------------
+    # ckpt
+    model.compile(loss=L2_loss,optimizer=optimizer,metrics=['mean_absolute_error'])
+    steps_per_epoch = ceil(N_IMAGES/BATCH_SIZE)
+    progress_callback = model.fit_generator(train_generator,steps_per_epoch=steps_per_epoch,epochs=EPOCHS,verbose=1,callbacks=[ckpt])
+    losses = progress_callback.history["loss"]
+    errors = progress_callback.history['mean_absolute_error']
+
+    np.savetxt(LogsPath + "loss_history.txt", np.array(losses), delimiter=',')
+    np.savetxt(LogsPath + "errors_history.txt", np.array(errors), delimiter=',')
+
+    # model.save('supervised_learning_adam_lr0.0001_L2_21_2_22.h5')
+    model.save(CheckPointPath+ 'supervised_learning_sgd_lr0.0001,m0.9_20k_run2.h5')
+
 
 
 
@@ -240,6 +358,34 @@ def TrainOperation():
     #         print('\n' + SaveName + ' Model Saved...')
             
 
+def UnsupervisedTrainOperation(batch_size,total_epochs,n_samples,ImagesPath,image_names):
+
+    Ca_batch = tf.placeholder(tf.float32, shape=(batch_size, 4,2))
+    patches_batch= tf.placeholder(tf.float32, shape=(batch_size, 128, 128 ,2))
+    patch_b_batch = tf.placeholder(tf.float32, shape=(batch_size, 128, 128, 1))
+    img_a = tf.placeholder(tf.float32, shape=(batch_size, 240, 320, 1))
+    pred_patchB,true_patchB = UnsupervisedModel(patches_batch,batch_size,Ca_batch,patch_b_batch, img_a)
+    Saver = tf.train.Saver()
+    with tf.name_scope('Loss'):
+        loss = tf.reduce_mean(tf.abs(pred_patchB - true_patchB))
+
+    with tf.name_scope('Adam'):
+        Optimizer = tf.train.AdamOptimizer(learning_rate=1e-5).minimize(loss)
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        steps_per_epoch = ceil(n_samples/batch_size)
+        for epoch in range(total_epochs):
+            for batch in range(steps_per_epoch):
+                patches_batch, Ca_batch,patch_b_batch,img_a = unsupervised_batch_generator(ImagesPath,batch_size,image_names)
+                
+                sess.run([Optimizer, loss], feed_dict={patches_batch:patches_batch,Ca_batch:Ca_batch,\
+                                                                        patch_b_batch:patch_b_batch,img_a:img_a})
+
+
+    Saver.save(sess,save_path="./Unsupervised_model_Savepath")
+
+
 def main():
     """
     Inputs: 
@@ -289,8 +435,19 @@ def main():
     # TrainOperation(ImgPH, LabelPH, DirNamesTrain, TrainLabels, NumTrainSamples, ImageSize,
     #                 NumEpochs, MiniBatchSize, SaveCheckPoint, CheckPointPath,
     #                 DivTrain, LatestFile, BasePath, LogsPath, ModelType)
-    TrainOperation()
-        
+
+    # ----------------------------- Supervised training operation --------------------------------------
+    # TrainOperation(CheckPointPath,LogsPath)
+    # --------------------------------------------------------------------------------------------------
+    # 
+    # ---------------------------Unsupervised training operation-------------------------------------
+    image_names=[]
+    ImagesPath="./../Data/Train"
+    for dir,subdir,files in os.walk(ImagesPath):
+        for file in files:
+            image_names.append(file)
+    UnsupervisedTrainOperation(batch_size=32,total_epochs=3,n_samples=100,ImagesPath=ImagesPath,image_names=image_names)
+    # -----------------------------------------------------------------------------------------------    
     
 if __name__ == '__main__':
     main()

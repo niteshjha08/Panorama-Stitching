@@ -10,7 +10,10 @@ PhD Candidate in Computer Science,
 University of Maryland, College Park
 """
 
-import tensorflow as tf
+# import tensorflow as tf
+import tensorflow.compat.v1 as tf
+tf.disable_v2_behavior()
+
 import sys
 import numpy as np
 from tensorflow.keras.models import Sequential
@@ -40,48 +43,63 @@ def HomographyModel():
 
     # relu layer after batch normalization
     # two conv2d layers and maxpooling2d layer on 128x128 size
-    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same',activation='relu'))
+    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
 
-    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same',activation='relu'))
+
+    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
 
-    model.add(MaxPooling2D(pool_size=(2,2)))
+
+    model.add(MaxPooling2D(pool_size=(2,2),padding='same'))
 
     # two conv2d layers and maxpooling2d layer on 64x64
-    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same',activation='relu'))
+    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
 
-    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same',activation='relu'))
+
+    model.add(Conv2D(64,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
 
-    model.add(MaxPooling2D(pool_size=(2,2)))
+    model.add(MaxPooling2D(pool_size=(2,2),padding='same'))
 
     # two conv2d layers and maxpooling layer on 32x32
-    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same',activation='relu'))
+    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
 
-    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same',activation='relu'))
+
+    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
 
-    model.add(MaxPooling2D(pool_size=(2,2)))
+
+    model.add(MaxPooling2D(pool_size=(2,2),padding='same'))
 
     # two conv2d layers on 16x16
-    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same',activation='relu'))
+    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
 
-    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same',activation='relu'))
+
+    model.add(Conv2D(128,(3,3),strides=(1,1),padding='same'))
     model.add(BatchNormalization())
+    model.add(Activation('relu'))
+
 
     # Fully connected layer
     model.add(Flatten())
-    model.add(Dropout(0.5))
+    # model.add(Dropout(0.5))
 
     model.add(Dense(1024,activation='relu'))
     model.add(Dropout(0.5))
 
     model.add(Dense(8))
-
+    
     return model
 
     # return H4Pt
