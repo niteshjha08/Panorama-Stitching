@@ -274,44 +274,45 @@ def TensorDLT(batch_size,Ca,H_4pt):
 
 def UnsupervisedModel(patches_batch,batch_size,Ca,patches_b, img_a):
     # conv2d on 128 size
-    s = tf.layers.conv2d(inputs=patches_batch,name='conv2d_1',kernel_size=(3,3),filters=64,padding='same')
+    print(patches_batch.shape,"is the shape of patches batch")
+    s = tf.layers.conv2d(inputs=patches_batch,name='conv2d_1',kernel_size=[3,3],filters=64,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_1')
     s = tf.nn.relu(s,name='relu_1')
 
-    s = tf.layers.conv2d(inputs=s,name='conv2d_2',kernel_size=(3,3),filters=64,padding='same')
+    s = tf.layers.conv2d(inputs=s,name='conv2d_2',kernel_size=[3,3],filters=64,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_2')
     s = tf.nn.relu(s,name='relu_2')
 
-    s = tf.layers.max_pooling2d(s,pool_size=(2,2),strides=2)
+    s = tf.layers.max_pooling2d(s,pool_size=[2,2],strides=2)
 
     # conv2d on 64 size
-    s = tf.layers.conv2d(inputs=s,name='conv2d_3',kernel_size=(3,3),filters=64,padding='same')
+    s = tf.layers.conv2d(inputs=s,name='conv2d_3',kernel_size=[3,3],filters=64,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_3')
     s = tf.nn.relu(s,name='relu_3')
 
-    s = tf.layers.conv2d(inputs=s,name='conv2d_4',kernel_size=(3,3),filters=64,padding='same')
+    s = tf.layers.conv2d(inputs=s,name='conv2d_4',kernel_size=[3,3],filters=64,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_4')
     s = tf.nn.relu(s,name='relu_4')
 
-    s = tf.layers.max_pooling2d(s,pool_size=(2,2),strides=2)
+    s = tf.layers.max_pooling2d(s,pool_size=[2,2],strides=2)
 
     # conv2d on 32 size
-    s = tf.layers.conv2d(inputs=s,name='conv2d_5',kernel_size=(3,3),filters=128,padding='same')
+    s = tf.layers.conv2d(inputs=s,name='conv2d_5',kernel_size=[3,3],filters=128,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_5')
     s = tf.nn.relu(s,name='relu_5')
 
-    s = tf.layers.conv2d(inputs=s,name='conv2d_6',kernel_size=(3,3),filters=128,padding='same')
+    s = tf.layers.conv2d(inputs=s,name='conv2d_6',kernel_size=[3,3],filters=128,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_6')
     s = tf.nn.relu(s,name='relu_6')
 
-    s = tf.layers.max_pooling2d(s,pool_size=(2,2),strides=2)
+    s = tf.layers.max_pooling2d(s,pool_size=[2,2],strides=2)
 
     # conv2d on 16 size
-    s = tf.layers.conv2d(inputs=s,name='conv2d_7',kernel_size=(3,3),filters=128,padding='same')
+    s = tf.layers.conv2d(inputs=s,name='conv2d_7',kernel_size=[3,3],filters=128,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_7')
     s = tf.nn.relu(s,name='relu_7')
 
-    s = tf.layers.conv2d(inputs=s,name='conv2d_8',kernel_size=(3,3),filters=128,padding='same')
+    s = tf.layers.conv2d(inputs=s,name='conv2d_8',kernel_size=[3,3],filters=128,padding='same')
     s = tf.layers.batch_normalization(s,name='batchnorm_8')
     s = tf.nn.relu(s,name='relu_8')
 
@@ -345,10 +346,11 @@ def UnsupervisedModel(patches_batch,batch_size,Ca,patches_b, img_a):
 
     Ia = tf.slice(img_a,[0,0,0,0],[batch_size,128,128,1])
     warped_Ia,_ = transformer(Ia,H_matrix, (128,128))
+    print("warpedIa shape is before reshaping:",tf.shape(warped_Ia))
 
-    warped_Ia = tf.reshape(warped_Ia, [batch_size,128,128])
+    # warped_Ia = tf.reshape(warped_Ia, [batch_size,128,128])
     print("warpedIa shape is:",tf.shape(warped_Ia))
-    warped_Ia_gray = tf.reduce_mean(warped_Ia,axis=0)
+    warped_Ia_gray = tf.reduce_mean(warped_Ia,axis=3)
     print("warpedIa gray shape is:",tf.shape(warped_Ia_gray))
 
     # warped_Ia_gray =tf.reduce_mean(warped_Ia,)

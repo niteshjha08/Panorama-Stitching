@@ -142,9 +142,9 @@ def unsupervised_batch_generator(ImagesPath,batch_size,image_names):
         
             H4_flat = np.hstack((X,Y))
             labels.append(H4_flat)
-            img_1.append(img)
+            img_1.append(img.reshape(img.shape[0],img.shape[1],1))
             Ca_batch.append(Ca)
-            patch_b_batch.append(patch_B)
+            patch_b_batch.append(patch_B.reshape(128,128,1))
             
     patches = np.array(patches)
     labels = np.array(labels)
@@ -360,14 +360,14 @@ def TrainOperation(CheckPointPath,LogsPath):
 
 def UnsupervisedTrainOperation(batch_size,total_epochs,n_samples,ImagesPath,image_names):
 
-    Ca_batch = tf.placeholder(tf.float32, shape=(batch_size, 4,2))
-    patches_batch= tf.placeholder(tf.float32, shape=(batch_size, 128, 128 ,2))
-    patch_b_batch = tf.placeholder(tf.float32, shape=(batch_size, 128, 128, 1))
-    img_a = tf.placeholder(tf.float32, shape=(batch_size, 240, 320, 1))
-    pred_patchB,true_patchB = UnsupervisedModel(patches_batch,batch_size,Ca_batch,patch_b_batch, img_a)
+    Ca_batch_ = tf.placeholder(tf.float32, shape=(batch_size, 4,2))
+    patches_batch_= tf.placeholder(tf.float32, shape=(batch_size, 128, 128 ,2))
+    patch_b_batch_ = tf.placeholder(tf.float32, shape=(batch_size, 128, 128, 1))
+    img_a_ = tf.placeholder(tf.float32, shape=(batch_size, 240, 320, 1))
+    pred_patchB_,true_patchB_ = UnsupervisedModel(patches_batch_,batch_size,Ca_batch_,patch_b_batch_, img_a_)
     Saver = tf.train.Saver()
     with tf.name_scope('Loss'):
-        loss = tf.reduce_mean(tf.abs(pred_patchB - true_patchB))
+        loss = tf.reduce_mean(tf.abs(pred_patchB_ - true_patchB_))
 
     with tf.name_scope('Adam'):
         Optimizer = tf.train.AdamOptimizer(learning_rate=1e-5).minimize(loss)
@@ -379,8 +379,8 @@ def UnsupervisedTrainOperation(batch_size,total_epochs,n_samples,ImagesPath,imag
             for batch in range(steps_per_epoch):
                 patches_batch, Ca_batch,patch_b_batch,img_a = unsupervised_batch_generator(ImagesPath,batch_size,image_names)
                 
-                sess.run([Optimizer, loss], feed_dict={patches_batch:patches_batch,Ca_batch:Ca_batch,\
-                                                                        patch_b_batch:patch_b_batch,img_a:img_a})
+                sess.run([Optimizer, loss], feed_dict={patches_batch_:patches_batch,Ca_batch_:Ca_batch,\
+                                                                        patch_b_batch_:patch_b_batch,img_a_:img_a})
 
 
     Saver.save(sess,save_path="./Unsupervised_model_Savepath")
@@ -446,7 +446,7 @@ def main():
     for dir,subdir,files in os.walk(ImagesPath):
         for file in files:
             image_names.append(file)
-    UnsupervisedTrainOperation(batch_size=32,total_epochs=3,n_samples=100,ImagesPath=ImagesPath,image_names=image_names)
+    UnsupervisedTrainOperation(batch_size=10,total_epochs=3,n_samples=30,ImagesPath=ImagesPath,image_names=image_names)
     # -----------------------------------------------------------------------------------------------    
     
 if __name__ == '__main__':
