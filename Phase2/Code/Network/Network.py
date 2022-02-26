@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 """
 CMSC733 Spring 2019: Classical and Deep Learning Approaches for
 Geometric Computer Vision
@@ -11,6 +12,7 @@ University of Maryland, College Park
 """
 
 # import tensorflow as tf
+from ann_visualizer.visualize import ann_viz
 import tensorflow.compat.v1 as tf
 tf.disable_v2_behavior()
 
@@ -104,3 +106,9 @@ def HomographyModel():
 
     # return H4Pt
 
+def visualize_network():
+    model =HomographyModel()
+    ann_viz(model, title="supervised_network")
+
+if __name__=="__main__":
+    visualize_network()

@@ -11,6 +11,7 @@ def GeneratePatches(ImagesPath,image_names, patch_size=128,rho=32):
     idx=random.randint(0,len(image_names)-1)
     # print(idx)
     path=ImagesPath + os.sep + image_names[idx]
+    print(path)
     img=cv2.imread(path,0)  
     img=cv2.resize(img,(320,240))
     
@@ -42,10 +43,11 @@ def GeneratePatches(ImagesPath,image_names, patch_size=128,rho=32):
         Cb[i,1]=Ca[i,1] + rx
 
     # Visualize patches and perspective transform:
-    # cv2.polylines(img,[Ca],True,(0,0,255),5)
-    # cv2.polylines(img,[Cb],True,(0,255,0),5)
+    # cv2.polylines(img,[Ca],True,(0,0,255),2)
+    # cv2.polylines(img,[Cb],True,(0,255,0),2)
     # cv2.imshow('patch selection',img)
     # cv2.waitKey(0)
+
 
     # The following two methods of finding inverse perspective transform are equivalent
     # Method 1
