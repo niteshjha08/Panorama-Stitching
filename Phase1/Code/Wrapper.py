@@ -24,300 +24,413 @@ import os
 from copy import deepcopy
 # Add any python libraries here
 class Img:
-	def __init__(self):
-		self.name = ''
-		self.grey = []
-		self.rgb = []
-		self.corners = []
-		self. anms = []
-		self.fd = []
-		self.fdi = []
-		self.kp = []
-		self.temp_kp = []
-		self.side_offset = 0 ## positive for offset to right, negative for left
-		self.vertical_offset = 0 ## positive for top, negative for bottom
+    def __init__(self):
+        self.name = ''
+        self.grey = []
+        self.rgb = []
+        self.corners = []
+        self. anms = []
+        self.fd = []
+        self.fdi = []
+        self.kp = []
+        self.temp_kp = []
+        self.r_offset = 0 ## positive for offset to right, negative for left
+        self.c_offset = 0 ## positive for top, negative for bottom
 
 def read_imgs(path):
-	img_files = os.listdir(path)
-	img_files.sort()
-	img_arr = []
-	for f in img_files:
-		## Read image and append
-		img = Img()
-		img.rgb = cv2.imread(f'{path}/{f}')
-		img.grey = cv2.cvtColor(img.rgb, cv2.COLOR_BGR2GRAY)
-		img_arr.append(img)
-	return img_arr
+    img_files = os.listdir(path)
+    img_files.sort()
+    img_arr = []
+    for f in img_files:
+        ## Read image and append
+        img = Img()
+        img.rgb = cv2.imread(f'{path}/{f}')
+        img.grey = cv2.cvtColor(img.rgb, cv2.COLOR_BGR2GRAY)
+        img.grey = cv2.GaussianBlur(img.grey,(3,3),cv2.BORDER_DEFAULT)
+        img_arr.append(img)
+    return img_arr
 
 def get_corners(img_arr):
-	for img in img_arr:
-		img.corners = cv2.cornerHarris(img.grey, 2, 3, 0.04)
-	return img_arr
+    for img in img_arr:
+        img.corners = cv2.cornerHarris(img.grey, 2, 3, 0.04)
+    return img_arr
 
 def get_anms(img_arr, num_features):
-	for img in img_arr:
-		## First perform corner detection <I am using values found in example>
-		img.anms = cv2.goodFeaturesToTrack(img.grey, num_features, 0.01, 10)
-		img.anms = img.anms.astype(int)
-	return img_arr
+    for img in img_arr:
+        ## First perform corner detection <I am using values found in example>
+        img.anms = cv2.goodFeaturesToTrack(img.grey, num_features, 0.01, 10)
+        img.anms = img.anms.astype('int32')
+        rgb_anms = deepcopy(img.rgb)
+        best_c = img.anms
+        for j in range(len(best_c)):
+            [c,r] = best_c[j][0]
+            img_new2 = cv2.circle(rgb_anms, (c,r), 3, (0,0,255), 1)
+        anms_new = []
+        for i in range(len(img.anms)):
+            [c,r] = img.anms[i,0]
+            ## Eliminating wrong corners that are result of warping
+            if 0 < c < img.grey.shape[1] and 0 < r < img.grey.shape[0]:
+                c_s, c_e = c-20, c+20
+                r_s, r_e = r-20, r+20
+                if img.grey[r_s:r_e,c:c_e].all() == 0 or img.grey[r_s:r_e,c-1:c_e].all() == 0 or img.grey[r_s:r_e,c+1:c_e].all() == 0:
+                    pass
+                elif img.grey[r_s:r_e,c_s:c].all() == 0 or img.grey[r_s:r_e,c_s:c-1].all() == 0 or img.grey[r_s:r_e,c_s:c+1].all() == 0:
+                    pass
+                elif img.grey[r:r_e,c_s:c_e].all() == 0 or img.grey[r-1:r_e,c_s:c_e].all() == 0 or img.grey[r+1:r_e,c_s:c_e].all() == 0:
+                    pass
+                elif img.grey[r_s:r,c_s:c_e].all() == 0 or img.grey[r_s:r-1,c_s:c_e].all() == 0 or img.grey[r_s:r+1,c_s:c_e].all() == 0:
+                    pass
+                else:
+                    anms_new.append(img.anms[i])
+        img.anms = np.array(anms_new, dtype=int)
+    return img_arr
 
-def get_feature_descriptors(img_arr, out_path, patch_size=41, save_fig=False):
-	offset = patch_size//2
-	count = 0
-	for i in range(len(img_arr)):
-		img = img_arr[i]
-		img_shape = img.grey.shape
-		fd1 = []
-		fdi1 = []
-		for j in range(len(img.anms)):			
-			[c,r] = img.anms[j][0]
-			if c-offset>=0 and c+offset<=img_shape[0]-1 and r-offset>=0 and r+offset<=img_shape[1]-1:
-				feature = img.grey[r-offset:r+offset,c-offset:c+offset]
-				feature = cv2.GaussianBlur(feature,(7,7),cv2.BORDER_DEFAULT)
-				if i == 0 and count == 0 and save_fig:
-					cv2.imwrite(f'{out_path}/FD_4141_{j}.jpg', feature)
-				feature = cv2.resize(feature,(8,8))
-				if i == 0 and count == 0 and save_fig:
-					cv2.imwrite(f'{out_path}/FD_88_{j}.jpg', feature)
-					count+=1
-				feature = np.reshape(feature, (64,1))
-				feature = np.mean(feature, axis=1)
-				feature = (feature - np.mean(feature,axis=0))/np.std(feature, axis = 0)
-				fd1.append(feature)
-				fdi1.append([c,r]) #saving colums, row
-		img.fd = fd1
-		img.fdi = fdi1
-		img.kp = save_keypoints(img.fdi)
-	return img_arr
+def get_feature_descriptors(img_arr, fd_count, patch_size=41):
+    offset = patch_size//2
+    for i in range(len(img_arr)):
+        img = img_arr[i]
+        img_shape = img.grey.shape
+        fd1 = []
+        fdi1 = []
+        for j in range(len(img.anms)):			
+            [c,r] = img.anms[j][0]
+            if c-offset>=0 and c+offset<=img_shape[0]-1 and r-offset>=0 and r+offset<=img_shape[1]-1:
+                feature = img.grey[r-offset:r+offset,c-offset:c+offset]
+                feature = cv2.GaussianBlur(feature,(5,5),cv2.BORDER_DEFAULT)
+                if j < 20 and save_fig:
+                    cv2.imwrite(f'{out_path}/FD_4141_{fd_count}.jpg', feature)
+                feature = cv2.resize(feature,(8,8))
+                if j < 20 and save_fig:
+                    cv2.imwrite(f'{out_path}/FD_88_{fd_count}.jpg', feature)
+                    fd_count+=1
+                feature = np.reshape(feature, (64,1))
+                feature = np.mean(feature, axis=1)
+                feature = (feature - np.mean(feature,axis=0))/np.std(feature, axis = 0)
+                fd1.append(feature)
+                fdi1.append([c,r]) #saving colums, row
+        img.fd = fd1
+        img.fdi = fdi1
+        img.kp = save_keypoints(img.fdi)
+    return img_arr
 
 def save_keypoints(fdi):
-	kp_arr = []
-	for i in range(len(fdi)):
-		kp = cv2.KeyPoint(float(fdi[i][0]),float(fdi[i][1]),1.0)
-		kp_arr.append(kp)
-	return kp_arr
+    kp_arr = []
+    for i in range(len(fdi)):
+        kp = cv2.KeyPoint(float(fdi[i][0]),float(fdi[i][1]),1.0)
+        kp_arr.append(kp)
+    return kp_arr
 
-def get_feature_matching(img1, img2, out_path, threshold, save_fig=False):
-	'''
-	Logic: 
-	1. for each feature index in img_1, find SSD between it and all features indexes in img_2
-	2. take the ratio of best and second best
-	3. define a threshold and check if the ratio is less than the threshold
-	4. if true, keep the feature pair
-	'''
-	feature_pairs = [] #each one is an array of feature pair; shape: (n, 2, 62)
-	fp_indexes = [] # [column, row] pair of the corresponding feature pair; shape: (n, 4)
-	features1, f1_indexes = [], []
-	features2, f2_indexes = [], []
-	## Match with lesser feature array
-	if len(img1.fd) < len(img2.fd):
-		features2 = img2.fd[:len(img1.fd)][:]
-		f2_indexes = img2.fdi[:len(img1.fdi)][:]
-		features1 = img1.fd
-		f1_indexes = img1.fdi
-	if len(img1.fd) > len(img2.fd):
-		features1 = img1.fd[:len(img2.fd)][:]
-		f1_indexes = img1.fdi[:len(img2.fdi)][:]
-		features2 = img2.fd
-		f2_indexes = img2.fdi
-	## take keypoints of corresponding features
-	kp1 = img1.kp[:len(features1)]
-	kp2 = img2.kp[:len(features2)]
+def get_feature_matching(img1, img2, threshold, count):
+    '''
+    Logic: 
+    1. for each feature index in img_1, find SSD between it and all features indexes in img_2
+    2. take the ratio of best and second best
+    3. define a threshold and check if the ratio is less than the threshold
+    4. if true, keep the feature pair
+    '''
+    fp_indexes = [] # [column, row] pair of the corresponding feature pair; shape: (n, 4)
+    f1_idx_out = []
+    f2_idx_out = []
 
-	bf = cv2.BFMatcher()
-	matches = bf.knnMatch(np.asarray(features1,np.float32),np.asarray(features2,np.float32),2)
-	## matches is an array of cv2 DMatch object
-	## each match has distance, trainIdx(feature2), queryIdx(feature1), imgIdx(0 default)
-	good = []
-	for m,n in matches: # m is best matched feature and n is second best
-		if m.distance/n.distance <= threshold: # check is the ratio is good enough
-			good.append([m])
-			# save the indexes
-			f1_c, f1_r = f1_indexes[m.queryIdx]
-			f2_c, f2_r = f2_indexes[m.trainIdx]
-			indexes = [f1_c, f1_r, f2_c, f2_r] 
-			fp_indexes.append(indexes)
-			# save the features
-			f_arr = np.array([features1[m.queryIdx],features2[m.trainIdx]])
-			feature_pairs.append(f_arr)
+    features1, f1_indexes = [], []
+    features2, f2_indexes = [], []
+    ## Match with lesser feature array
+    if len(img1.fd) < len(img2.fd):
+        features2 = img2.fd[:len(img1.fd)][:]
+        f2_indexes = img2.fdi[:len(img1.fdi)][:]
+        features1 = img1.fd
+        f1_indexes = img1.fdi
+    if len(img1.fd) > len(img2.fd):
+        features1 = img1.fd[:len(img2.fd)][:]
+        f1_indexes = img1.fdi[:len(img2.fdi)][:]
+        features2 = img2.fd
+        f2_indexes = img2.fdi
+    ## take keypoints of corresponding features
+    kp1 = img1.kp[:len(features1)]
+    kp2 = img2.kp[:len(features2)]
 
-			# Sum of Squared Difference calculation
-			# m_check = np.sum(np.square(features1[m.queryIdx] - features2[m.trainIdx]))
-			# print(m.distance, np.sqrt(m_check), m_check)
-	if save_fig:	
+    ## find best two matching points
+    bf = cv2.BFMatcher()
+    matches = bf.knnMatch(np.asarray(features1,np.float32),np.asarray(features2,np.float32),2)
+    ## matches is an array of cv2 DMatch object
+    ## each match has distance, trainIdx(feature2), queryIdx(feature1), imgIdx(0 default)
+    good = []
+    original_threshold = threshold
+    while len(good)<70:
+        for m,n in matches: # m is best matched feature and n is second best
+            if m.distance/n.distance <= threshold: # check if the ratio is good enough
+                good.append([m])
+                # save the indexes
+                f1_c, f1_r = f1_indexes[m.queryIdx]
+                f2_c, f2_r = f2_indexes[m.trainIdx]
+                indexes = [f1_c, f1_r, f2_c, f2_r] 
+                fp_indexes.append(indexes)
+                f1_idx_out.append([f1_c,f1_r])
+                f2_idx_out.append([f2_c,f2_r])
+        threshold += 0.1
+    threshold = original_threshold
+    matched_image = cv2.drawMatchesKnn(img1.rgb, kp1, img2.rgb, kp2, good, None, flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    if save_fig:
+        cv2.imwrite(f'{out_path}/feature_matching{count}.jpg', matched_image)
+    cv2.imshow("feature_matching", matched_image)
+    if cv2.waitKey(0)==ord('q'):
+        cv2.destroyAllWindows()
+    
+    return f1_idx_out, f2_idx_out, good
 
-		matched_image = cv2.drawMatchesKnn(img1.rgb, kp1, img2.rgb, kp2, good, None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-		cv2.imwrite(f'{out_path}/feature_matching.jpg', matched_image)
+def performRANSAC(f1_idx, f2_idx, good, inlier_tolerance, num_iter=100):
+    ## destination -- main image (img1); source -- changing image (img2)
+    inlier_idx = []
+    good_new = []
+    i = 0
+    # while (len(inlier_idx)<80) or (i<num_iter):
+    vals = []
+    original_tolerance = inlier_tolerance
+    while len(inlier_idx)<10:
+        for _ in range(num_iter):
+            ## choose 4 random pairs
+            pairs = np.random.randint(0,len(f1_idx),size=4)
+            destination_features = np.float32([f1_idx[p] for p in pairs])
+            source_features = np.float32([f2_idx[p] for p in pairs])
+            h_estimate = cv2.getPerspectiveTransform(source_features, destination_features)
 
-	return feature_pairs, fp_indexes, good
+            for p in pairs:
+                Hpi = np.dot(h_estimate, np.array([f1_idx[p][0], f1_idx[p][1], 1]))
+                if Hpi[2] != 0:
+                    Hpi_x = Hpi[0]/Hpi[2]
+                    Hpi_y = Hpi[1]/Hpi[2]
+                else:
+                    Hpi_x = Hpi[0]/0.000001
+                    Hpi_y = Hpi[1]/0.000001
+                Hpi = np.array([Hpi_x, Hpi_y])
+                ppi = f2_idx[p]
+                ssd = np.linalg.norm(ppi-Hpi)
+                vals.append(ssd)
+                if ssd > 1.0 and ssd < inlier_tolerance:
+                    # print(ssd)
+                    if f1_idx[p] not in inlier_idx and f2_idx[p] not in inlier_idx:
+                        inlier_idx.append(f1_idx[p])
+                        inlier_idx.append(f2_idx[p])
+                        good_new.append(good[p])
+        diff = abs(inlier_tolerance-min(vals))+30.0
+        inlier_tolerance += diff
+        # i += 1
+        # if len(inlier_idx)==len(f1_idx):
+    inlier_tolerance = original_tolerance
+    destination_features = np.float32([inlier_idx[i] for i in range(0,len(inlier_idx),2)])
+    source_features = np.float32([inlier_idx[i]for i in range(1,len(inlier_idx),2)])
+    homography, _ = cv2.findHomography(source_features, destination_features, method=0, ransacReprojThreshold=0.0)
+    return np.asarray(inlier_idx), good_new, homography
 
-def performRANSAC(feature_pairs, fp_indexes, good, inlier_tolerance, num_iter, save_fig=False):
-	inlier_fp = []
-	inlier_idx = []
-	good_new = []
-	i = 0
-	while (len(inlier_fp)<int(len(feature_pairs)*0.9)):
-		## choose 4 random pairs
-		pairs = np.random.randint(0,len(fp_indexes),size=4)
-		destination_features = np.float32([[[fp_indexes[p][0],fp_indexes[p][1]]] for p in pairs])
-		source_features = np.float32([[[fp_indexes[p][2],fp_indexes[p][3]]] for p in pairs])
-		h_estimate, _ = cv2.findHomography(source_features, destination_features, method=0, ransacReprojThreshold=0.0)
-		try:
-			for p in pairs:
-				Hpi = np.dot(h_estimate,np.array([[fp_indexes[p][2]],[fp_indexes[p][1]],[3]]))
-				ppi = np.array([[fp_indexes[p][0]],[fp_indexes[p][1]],[1]])
-				ssd = np.sqrt(np.sum(np.square(ppi-Hpi)))
-				if ssd < inlier_tolerance:
-					if fp_indexes[p] not in inlier_idx:
-						inlier_fp.append(feature_pairs[p])
-						inlier_idx.append([fp_indexes[p][:2]])
-						inlier_idx.append([fp_indexes[p][2:]])
-						good_new.append(good[p])
-		except TypeError:
-			pass
-		i += 1
-	destination_features = np.float32([inlier_idx[i] for i in range(0,len(inlier_idx),2)])
-	source_features = np.float32([inlier_idx[i]for i in range(1,len(inlier_idx),2)])
-	homography, _ = cv2.findHomography(source_features, destination_features, method=0, ransacReprojThreshold=0.0)
-	return inlier_fp, np.asarray(inlier_idx), good_new, homography
+def warpTwoImages(img1, img2, H, r_offset, c_offset):
+    '''warp, blend and stitch img2 to img1 with homograph H'''
+    h1,w1 = img1.shape[:2]
+    h2,w2 = img2.shape[:2]
+    pts1 = np.float32([[0,0],[0,h1],[w1,h1],[w1,0]]).reshape(-1,1,2)
+    pts2 = np.float32([[0,0],[0,h2],[w2,h2],[w2,0]]).reshape(-1,1,2)
+    pts2_ = cv2.perspectiveTransform(pts2, H)
+    pts = np.concatenate((pts1, pts2_), axis=0)
+    [xmin, ymin] = np.int32(pts.min(axis=0).ravel() - 0.5)
+    [xmax, ymax] = np.int32(pts.max(axis=0).ravel() + 0.5)
+    t = [-xmin,-ymin]
+    Ht = np.array([[1,0,t[0]],[0,1,t[1]],[0,0,1]]) # translate
 
-def stitcher(img1, img2, homography, matched_points):
-	warped_img = cv2.warpPerspective(src = img2.rgb, dst=None, M=np.linalg.inv(homography), dsize=(img2.rgb.shape[1], img2.rgb.shape[0]))
+    result = cv2.warpPerspective(img2, Ht.dot(H), (xmax-xmin+r_offset, ymax-ymin+c_offset))
+    r_s = max(t[1]-r_offset,0)
+    r_e = h1+r_s
+    c_s = max(t[0]-c_offset, 0)
+    c_e = w1+t[0]
+    if c_s-c_e != img1.shape[1]:
+        c_s = t[0]
+        c_e = w1+t[0]
+    if r_s-r_e != img1.shape[0]:
+        r_s = t[1]
+        r_e = h1+t[1]
+    r_i = 0
+    for r in range(r_s, r_e):
+        c_i = 0
+        for c in range(c_s, c_e):
+            if img1[r_i,c_i,:].all() != 0:
+                result[r,c,:] = img1[r_i,c_i,:]
+            c_i += 1
+        r_i += 1
+    # result[t[1]-r_offset//2:h1+t[1]-r_offset//2, t[0]-c_offset:w1+t[0]-c_offset] = img1
+    offset_y = t[0]-c_offset
+    offset_x = t[1]-r_offset
+    return result, offset_x, offset_y
 
-	# cv2.imshow("warped", warped_img)
-	# # cv2.imshow("im1", img1.rgb)
-	# if cv2.waitKey(0) == ord('q'):
-	# 	cv2.destroyAllWindows()
-	check_distance = np.sum(np.sum(matched_points[::2]-matched_points[1::2], axis=1), axis=0)
-	ofs = np.average(matched_points[::2]-matched_points[1::2], axis=0)
-	print(ofs)
-	if check_distance[0] < check_distance[1]:
-		stitched_img, offsets = stitch_vertical(img1, warped_img, int(ofs[0][0]))
-		# cv2.imshow("stitched_img", stitched_img)
-		# if cv2.waitKey(0) == ord('q'):
-		# 	cv2.destroyAllWindows()
-	else:
-		stitched_img, offsets = stitch_horizontal(img1, warped_img, int(ofs[0][1]))
-		
-	return stitched_img
-def stitch_horizontal(img1, img2, offset):
-	height = img1.rgb.shape[0]
-	width = img1.rgb.shape[1] + img2.shape[1]
-	new_img = np.zeros((height, width, 3), np.uint8)
-	new_img[:height][:img1.rgb.shape[1]][:] = img1.rgb
-	new_img[:height][img1.rgb.shape[1]:][:] = img2
-	zeros = np.zeros((1,width,3), np.uint8)
-	# for i in range(len(new_img)):
-	# 	if new_img[i][:][:].all() == zeros[0][:][:].all():
-	# 		print(i)
-	return 0,0
+def stitching_pipeline(img1, img2, count):
+    ## img1 features(destination -- the one we want to stitch to), img2 features(Source --  the one we want to change to match destination)
+    f1_idx, f2_idx, good = get_feature_matching(img1, img2, threshold=FM_THRESHOLD, count=count)
+    print('Feature Matching output shapes:',np.shape(f1_idx))
+    
+    """
+    Refine: RANSAC, Estimate Homography
+    """
+    ransac_idx, good_new, homography = performRANSAC(f1_idx, f2_idx, good, RANSAC_THRESHOLD)
+    print('RANSAC output shapes:',np.shape(ransac_idx))
 
-def stitch_vertical(img1, img2, offset):
-	height = img1.rgb.shape[0] + img2.shape[0]
-	width = img1.rgb.shape[1] + offset
-	new_img = np.zeros((height, width, 3), np.uint8)
-	new_img[:img1.rgb.shape[0],:width-offset,:] = img1.rgb[:,:,:]
-	new_img[img1.rgb.shape[0]:,offset:width,:] = img2
-	
-	zeros = np.zeros((1,width,3), np.uint8)
-	for i in range(500):# len(new_img)):
-		if new_img[i][:][:].all() == zeros[0][:][:].all():
-			print(new_img[i][:][:].all() == zeros[0][:][:].all())
-			print(i)
-	print(np.shape(new_img))
-	return new_img,0
+    ## plot the result
+    matched_image = cv2.drawMatchesKnn(img1.rgb, img1.kp, img2.rgb, img2.kp, good_new, None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
+    cv2.imshow("ransac", matched_image)
+    if cv2.waitKey(0)==ord('q'):
+        cv2.destroyAllWindows()
+    if save_fig:
+        cv2.imwrite(f'{out_path}/ransac{count}.jpg', matched_image)
+    
+    """
+    Image Warping + Blending
+    Save Panorama output as mypano.png
+    """
+    warped_img, r_offset, c_offset = warpTwoImages(img1.rgb, img2.rgb, homography, img1.r_offset, img1.c_offset)
+    
+    print(r_offset, c_offset)
+    cv2.imshow("warped_img", warped_img)
+    if cv2.waitKey(0)==ord('q'):
+        cv2.destroyAllWindows()
+    if save_fig:
+        cv2.imwrite(f'{out_path}/stitched{count}.jpg', warped_img)
+    """
+    Processing the Stitched image
+    """
+    stitched_img = Img()
+    stitched_img.r_offset += r_offset
+    stitched_img.c_offset += c_offset
+    stitched_img.rgb = warped_img
+    stitched_img.grey = cv2.cvtColor(warped_img, cv2.COLOR_BGR2GRAY)
+    ## Corners calculation
+    [stitched_img] = get_corners([stitched_img])
+    print("Stitched Corners shapes:",np.shape(stitched_img.corners))
+
+    if save_fig:
+        rgb_corners = deepcopy(stitched_img.rgb)
+        corners_arr = stitched_img.corners
+        corners_arr[corners_arr<0] = 0
+        mean = np.mean(corners_arr)
+        for r in range(len(corners_arr)):
+            for c in range(len(corners_arr[0])):
+                if corners_arr[r][c] > mean:
+                    img_new = cv2.circle(rgb_corners, (c,r), 1, (0,0,255), 1)
+        cv2.imwrite(f'{out_path}/stitched_corners_{count}.jpg', img_new)
+
+    ## ANMS Calculation
+    [stitched_img] = get_anms([stitched_img], NumFeatures)
+    stitched_img.anms = stitched_img.anms[10:]
+    print("Stitched ANMS shapes:",np.shape(stitched_img.anms))
+    
+    rgb_anms = deepcopy(stitched_img.rgb)
+    best_c = stitched_img.anms
+    for j in range(len(best_c)):
+        [c,r] = best_c[j][0]
+        img_new2 = cv2.circle(rgb_anms, (c,r), 3, (0,0,255), 1)
+    if save_fig:
+        cv2.imwrite(f'{out_path}/stitched_anms_{count}.jpg', img_new)
+    cv2.imshow("anms", img_new2)
+    if cv2.waitKey(0)==ord('q'):
+        cv2.destroyAllWindows()
+    [stitched_img] = get_feature_descriptors([stitched_img], fd_count)
+    return stitched_img
 
 def main():
-	# Add any Command Line arguments here
-	Parser = argparse.ArgumentParser()
-	Parser.add_argument('--NumFeatures','-n', default=300, type=int, help='Number of best features to extract from each image, Default:100')
-	Parser.add_argument('--path', '-p', type=str, help='Path where input data is', default="../Data/Train/Set1")
-	Parser.add_argument('--save_fig', '-s', type=bool, help='True if you want to save outputs', default=False)
-	Args = Parser.parse_args()
-	NumFeatures = Args.NumFeatures
-	in_path=Args.path
-	out_path = '../Data/Outputs'
-	if not os.path.isdir(out_path):
-		os.makedirs(out_path)
-	out_path = f'{out_path}/{in_path.split("/")[-1]}'
-	if not os.path.isdir(out_path):
-		os.makedirs(out_path)
-	"""
-	Read a set of images for Panorama stitching
-	"""
-	img_arr = read_imgs(in_path) ## gray scale images for processing, rgb images for visualization
-	LEFT = len(img_arr) # total number of images left to be stitched
-	"""
-	Corner Detection
-	Save Corner detection output as corners.png
-	"""
-	img_arr = get_corners(img_arr)
-	print("Corners output shapes:",np.shape(img_arr[0].corners),np.shape(img_arr[1].corners),np.shape(img_arr[2].corners))
-	## Save output images
-	## corners
-	for i in range(len(img_arr)):
-		img = img_arr[i]
-		rgb_corners = deepcopy(img.rgb)
-		corners_arr = img.corners
-		corners_arr[corners_arr<0] = 0
-		mean = np.mean(corners_arr)
-		for r in range(len(corners_arr)):
-			for c in range(len(corners_arr[0])):
-				if corners_arr[r][c] > mean:
-					img_new = cv2.circle(rgb_corners, (c,r), 1, (0,0,255), 1)
-		if Args.save_fig:
-			cv2.imwrite(f'{out_path}/corners_{i+1}.jpg', img_new)
-	"""
-	Perform ANMS: Adaptive Non-Maximal Suppression
-	Save ANMS output as anms.png
-	"""
-	img_arr = get_anms(img_arr, NumFeatures)
-	## Save output images
-	## anms
-	for i in range(len(img_arr)):
-		img = img_arr[i]
-		rgb_anms = deepcopy(img.rgb)
-		best_c = img.anms
-		for j in range(len(best_c)):
-			[c,r] = best_c[j][0]
-			img_new2 = cv2.circle(rgb_anms, (c,r), 3, (0,0,255), 1)
-		if Args.save_fig:
-			cv2.imwrite(f'{out_path}/anms_{i+1}.jpg', img_new2)
-	print("AMNS output shapes:",np.shape(img_arr[0].anms),np.shape(img_arr[1].anms),np.shape(img_arr[2].anms))
-	"""
-	Feature Descriptors
-	Save Feature Descriptor output as FD.png
-	"""
-	img_arr = get_feature_descriptors(img_arr, out_path, patch_size=41, save_fig=Args.save_fig)
-	print("Feature Descriptors output shapes:",np.shape(img_arr[0].fd),np.shape(img_arr[1].fd),np.shape(img_arr[2].fd))
-	print("Feature Descriptors Index output shapes:",np.shape(img_arr[0].fdi),np.shape(img_arr[1].fdi),np.shape(img_arr[2].fdi))
-	"""
-	Feature Matching
-	Save Feature Matching output as matching.png
-	"""
-	matching_f12, matching_i12, good = get_feature_matching(img_arr[0], img_arr[1], out_path, threshold=0.8, save_fig=Args.save_fig)
-	print('Feature Matching output shapes:',np.shape(matching_f12),np.shape(matching_i12))
-	"""
-	Refine: RANSAC, Estimate Homography
-	"""
-	ransac_fp, ransac_idx, good_new, homography = performRANSAC(matching_f12, matching_i12, good, 20, num_iter=40, save_fig=Args.save_fig)
-	print('RANSAC output shapes:',np.shape(ransac_fp),np.shape(ransac_idx))
+    # Add any Command Line arguments here
+    Parser = argparse.ArgumentParser()
+    Parser.add_argument('--NumFeatures','-n', default=300, type=int, help='Number of best features to extract from each image, Default:100')
+    Parser.add_argument('--path', '-p', type=str, help='Path where input data is', default="../Data/Train/Set1")
+    Parser.add_argument('--save_fig', '-s', type=bool, help='True if you want to save outputs', default=False)
+    Args = Parser.parse_args()
+    
+    global out_path, FM_THRESHOLD, RANSAC_THRESHOLD, NumFeatures, save_fig, fd_count
+    ## Hyper params
+    fd_count = 0
+    NumFeatures = Args.NumFeatures
+    save_fig = Args.save_fig
+    # in_path=Args.path
+    in_path="../Data/Train/Set2"
+    out_path = '../Data/Outputs'
+    if not os.path.isdir(out_path):
+        os.makedirs(out_path)
+    out_path = f'{out_path}/{in_path.split("/")[-1]}'
+    if not os.path.isdir(out_path):
+        os.makedirs(out_path)
+    FM_THRESHOLD = 0.80
+    RANSAC_THRESHOLD = 100.0
+    """
+    Read a set of images for Panorama stitching
+    """
+    img_arr = read_imgs(in_path) ## gray scale images for processing, rgb images for visualization
+    LEFT = len(img_arr) # total number of images left to be stitched
+    """
+    Corner Detection
+    Save Corner detection output as corners.png
+    """
+    img_arr = get_corners(img_arr)
+    print("Corners output shapes:",np.shape(img_arr[0].corners),np.shape(img_arr[1].corners),np.shape(img_arr[2].corners))
+    ## Save output images
+    ## corners
+    for i in range(len(img_arr)):
+        img = img_arr[i]
+        rgb_corners = deepcopy(img.rgb)
+        corners_arr = img.corners
+        corners_arr[corners_arr<0] = 0
+        mean = np.mean(corners_arr)
+        for r in range(len(corners_arr)):
+            for c in range(len(corners_arr[0])):
+                if corners_arr[r][c] > mean:
+                    img_new = cv2.circle(rgb_corners, (c,r), 1, (0,0,255), 1)
+        if save_fig:
+            cv2.imwrite(f'{out_path}/corners_{i+1}.jpg', img_new)
+    """
+    Perform ANMS: Adaptive Non-Maximal Suppression
+    Save ANMS output as anms.png
+    """
+    img_arr = get_anms(img_arr, NumFeatures)
+    ## Save output images
+    ## anms
+    for i in range(len(img_arr)):
+        img = img_arr[i]
+        rgb_anms = deepcopy(img.rgb)
+        best_c = img.anms
+        for j in range(len(best_c)):
+            [c,r] = best_c[j][0]
+            img_new2 = cv2.circle(rgb_anms, (c,r), 3, (0,0,255), 1)
+        if save_fig:
+            cv2.imwrite(f'{out_path}/anms_{i+1}.jpg', img_new2)
+    print("AMNS output shapes:",np.shape(img_arr[0].anms),np.shape(img_arr[1].anms),np.shape(img_arr[2].anms))
+    """
+    Feature Descriptors
+    Save Feature Descriptor output as FD.png
+    """
+    img_arr = get_feature_descriptors(img_arr, fd_count)
+    print("Feature Descriptors output shapes:",np.shape(img_arr[0].fd),np.shape(img_arr[1].fd),np.shape(img_arr[2].fd))
+    print("Feature Descriptors Index output shapes:",np.shape(img_arr[0].fdi),np.shape(img_arr[1].fdi),np.shape(img_arr[2].fdi))
+    """
+    Feature Matching
+    Save Feature Matching output as matching.png
+    """
+    anchor_img = LEFT//2
+    count = 0
 
-	## plot the result
-	matched_image = cv2.drawMatchesKnn(img_arr[0].rgb, img_arr[0].kp, img_arr[1].rgb, img_arr[1].kp, good_new, None,flags=cv2.DrawMatchesFlags_NOT_DRAW_SINGLE_POINTS)
-	if Args.save_fig:
-		cv2.imwrite(f'{out_path}/ransac.jpg', matched_image)
-	
-	
-	"""
-	Image Warping + Blending
-	Save Panorama output as mypano.png
-	"""
-	stitched_img = stitcher(img_arr[0], img_arr[1], homography, ransac_idx)
-	if Args.save_fig:
-		cv2.imwrite(f'{out_path}/stitched12.jpg', stitched_img)
+    for i in range(anchor_img,0,-1):
+        if i == anchor_img:
+            img1 = img_arr[i] ## the one we want to stitch to
+        img2 = img_arr[i-1] ## the one we want to warp
+        stitched_img = stitching_pipeline(img1, img2, count)
+        count+=1
+        img1 = stitched_img
+    
+    img1 = stitched_img ## the one we want to stitch to
+    for i in range(anchor_img, anchor_img+1):
+        img2 = img_arr[i+1] ## the one we want to warp
+        stitched_img = stitching_pipeline(img1, img2, count)
+        count += 1
+        img1 = stitched_img
+    cv2.imshow("final",stitched_img.rgb)
+    if cv2.waitKey(0)==ord('q'):
+        cv2.destroyAllWindows()
+    if save_fig:
+        cv2.imwrite(f'{out_path}/final_img.jpg', stitched_img.rgb)
 if __name__ == '__main__':
-	main()
+    main()
 
 
 ## How to have interactive imshow
